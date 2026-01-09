@@ -1,0 +1,147 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>CS:GO Fictional Case Sim</title>
+    <style>
+        :root {
+            --mil-spec: #4b69ff; --restricted: #8847ff; --classified: #d32ee6; 
+            --covert: #eb4b4b; --special: #caab05; --bg: #0b0e11;
+        }
+        body { background: var(--bg); color: white; font-family: 'Segoe UI', sans-serif; margin: 0; display: flex; height: 100vh; overflow: hidden; }
+        #main { flex-grow: 1; display: flex; flex-direction: column; align-items: center; padding: 20px; }
+        
+        /* The Spinner */
+        .viewport { width: 800px; height: 160px; background: #111; position: relative; overflow: hidden; border: 2px solid #333; margin: 50px 0; }
+        .strip { display: flex; position: absolute; left: 0; top: 0; transition: transform 5s cubic-bezier(0.1, 0, 0.05, 1); }
+        .item { width: 160px; height: 160px; flex-shrink: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; border-right: 1px solid #222; font-size: 10px; text-align: center; }
+        .item img { width: 120px; height: auto; }
+        .pointer { position: absolute; left: 50%; top: 0; width: 4px; height: 100%; background: #ffcc00; z-index: 10; transform: translateX(-50%); box-shadow: 0 0 15px #ffcc00; }
+
+        /* Rarity Borders */
+        .r-mil-spec { border-bottom: 5px solid var(--mil-spec); }
+        .r-restricted { border-bottom: 5px solid var(--purple); }
+        .r-classified { border-bottom: 5px solid var(--pink); }
+        .r-covert { border-bottom: 5px solid var(--red); }
+        .r-special { border-bottom: 5px solid var(--special); background: radial-gradient(circle, rgba(202,171,5,0.1) 0%, transparent 70%); }
+
+        .btn { background: #5cb85c; color: white; border: none; padding: 15px 40px; font-size: 18px; cursor: pointer; font-weight: bold; border-radius: 4px; }
+        .btn:disabled { background: #333; cursor: wait; }
+        
+        #inventory { width: 300px; background: rgba(255,255,255,0.05); padding: 15px; overflow-y: auto; border-left: 1px solid #333; }
+        .inv-card { display: flex; align-items: center; margin-bottom: 10px; font-size: 12px; background: #1a1a1a; padding: 5px; }
+        .inv-card img { width: 40px; margin-right: 10px; }
+    </style>
+</head>
+<body>
+
+<div id="main">
+    <h1>Weapon Case Simulator</h1>
+    <div id="global-lb" style="background:rgba(0,0,0,0.5); padding:10px; border-radius:5px; margin-bottom:10px;">
+        <small style="color:#aaa">GLOBAL LOWEST FLOAT:</small> <b id="best-float">0.000000</b>
+    </div>
+
+    <div class="viewport">
+        <div class="pointer"></div>
+        <div id="strip" class="strip"></div>
+    </div>
+
+    <button id="openBtn" class="btn" onclick="startSpin()">OPEN CASE</button>
+</div>
+
+<div id="inventory">
+    <h3>INVENTORY</h3>
+    <div id="inv-list"></div>
+</div>
+
+<script>
+    // Fictional Database with corrected rarity levels
+    const SKIN_DATABASE = {
+        "mil-spec": [
+            { name: "AK-47 | Safari Mesh", img: "https://community.cloudflare.steamstatic.com/economy/image/-9a81dlWLwJ2UUGcVs_nsVtzdOEdtWwKGZZLQHTxDZ7I56KU0Zwwo4NUX4oFJZEHLbXH5ApeO4YmlhxYQknCRvCo04DEVlxkKgpot7HxfDhjx2zJcmRD4uO7kZKKm_L1NYTdn2xZ_Ity2b6S9N6kiwPl-0A4Y2_xcY7AIVRrMF3Y_1m-w7_v1pC_v57XiSw9Xv7O_S0" },
+            { name: "Glock-18 | Bunsen Burner", img: "https://community.cloudflare.steamstatic.com/economy/image/-9a81dlWLwJ2UUGcVs_nsVtzdOEdtWwKGZZLQHTxDZ7I56KU0Zwwo4NUX4oFJZEHLbXH5ApeO4YmlhxYQknCRvCo04DEVlxkKgposbaqKAxf0Ob3fDJ954mJh5S0hPb-OL7VqXlE6clitv_H8L72jQexqBc-MTrwIo-UdgU3M1rU8ge_weu-g5G0u8zPn3VguXNw4XfD30vgA_pSg_4" }
+        ],
+        "covert": [
+            { name: "AWP | Dragon Lore", img: "https://community.cloudflare.steamstatic.com/economy/image/-9a81dlWLwJ2UUGcVs_nsVtzdOEdtWwKGZZLQHTxDZ7I56KU0Zwwo4NUX4oFJZEHLbXH5ApeO4YmlhxYQknCRvCo04DEVlxkKgpot621FBRw7P7NYjV96tO7kZOfqOT8PLfpmWlU-Md8teX--InxgUG5_0VkMDjyJ9SVelU9N1DU8gC2ye7tgJ_u753An3ViuSIn5S3D30vg0RToYwE" }
+        ],
+        "special": [
+            { name: "★ Karambit | Doppler", img: "https://community.cloudflare.steamstatic.com/economy/image/-9a81dlWLwJ2UUGcVs_nsVtzdOEdtWwKGZZLQHTxDZ7I56KU0Zwwo4NUX4oFJZEHLbXH5ApeO4YmlhxYQknCRvCo04DEVlxkKgpovbSsLQJf1f_BYi59_8i_m46EhP_7Pb7um21f48ZoiO_F896giwLir0VvYG_2IoDHcwVvN1HS-FC8yL_shsC_v57OzHdg6Sgg7XfD30vgvN8_yS0" }
+        ]
+    };
+
+    let inventory = [];
+    let bestGlobalFloat = 1.0;
+
+    function getRandomSkin() {
+        const rand = Math.random() * 100;
+        let rarity = "mil-spec";
+
+        // Realistic CS:GO weighted odds
+        if (rand < 0.26) rarity = "special";      // Gold (Extreme rarity)
+        else if (rand < 0.90) rarity = "covert";  // Red
+        else rarity = "mil-spec";                 // Blue (Common)
+
+        const pool = SKIN_DATABASE[rarity];
+        const skin = pool[Math.floor(Math.random() * pool.length)];
+        return { ...skin, rarity: rarity };
+    }
+
+    function startSpin() {
+        const btn = document.getElementById('openBtn');
+        const strip = document.getElementById('strip');
+        btn.disabled = true;
+
+        // Reset strip
+        strip.style.transition = 'none';
+        strip.style.transform = 'translateX(0)';
+        strip.innerHTML = '';
+
+        // Generate the winning item FIRST so it's locked in
+        const winningSkin = getRandomSkin();
+        const winningFloat = Math.random();
+        const winIndex = 45; // The 45th item will be the winner
+
+        // Fill strip with random items
+        for (let i = 0; i < 60; i++) {
+            const displaySkin = (i === winIndex) ? winningSkin : getRandomSkin();
+            const div = document.createElement('div');
+            div.className = `item r-${displaySkin.rarity}`;
+            div.innerHTML = `<img src="${displaySkin.img}"><br>${displaySkin.name}`;
+            strip.appendChild(div);
+        }
+
+        // Trigger animation
+        setTimeout(() => {
+            strip.style.transition = 'transform 5s cubic-bezier(0.1, 0, 0.05, 1)';
+            // Center the winning item
+            const offset = (winIndex * 160) - (800 / 2) + 80;
+            strip.style.transform = `translateX(-${offset}px)`;
+        }, 50);
+
+        // Record the win only ONCE after animation
+        setTimeout(() => {
+            btn.disabled = false;
+            addToInventory(winningSkin, winningFloat);
+        }, 5200);
+    }
+
+    function addToInventory(skin, float) {
+        const item = { ...skin, float: float.toFixed(6) };
+        inventory.unshift(item);
+        
+        // Update Leaderboard
+        if (float < bestGlobalFloat) {
+            bestGlobalFloat = float;
+            document.getElementById('best-float').innerText = float.toFixed(6);
+        }
+
+        // Render Inventory
+        const list = document.getElementById('inv-list');
+        const div = document.createElement('div');
+        div.className = `inv-card r-${item.rarity}`;
+        div.innerHTML = `<img src="${item.img}"> <div><b>${item.name}</b><br>Float: ${item.float}</div>`;
+        list.prepend(div);
+    }
+</script>
+</body>
+</html>
